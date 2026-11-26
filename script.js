@@ -5,7 +5,6 @@
   const count = document.querySelector('#gallery-count');
   let totalCards = track ? track.querySelectorAll('.project-card').length : 0;
   const orbit = document.querySelector('#tool-orbit');
-  const chips = [...document.querySelectorAll('.tool-chip')];
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let frameRequest = 0;
 
@@ -13,17 +12,32 @@
     frameRequest = 0;
     if (!showcase || !track) return;
     const bounds = showcase.getBoundingClientRect();
-    const travel = Math.max(0, bounds.height - window.innerHeight);
+    const travel = Math.max(0, bounds.height - frame.offsetHeight);
     const progress = Math.min(1, Math.max(0, -bounds.top / (travel || 1)));
-    const distance = Math.max(0, track.scrollWidth - window.innerWidth * 0.9);
-    const x = -distance * (1 - progress);
+    const width = frame.clientWidth;
+    const center = width / 2;
+    const cards = [...track.children];
+    const first = cards[0];
+    const last = cards.at(-1);
+    const start = width <= 850 && first
+      ? center - first.offsetLeft - first.offsetWidth / 2
+      : -Math.max(0, track.scrollWidth - width * 0.9);
+    const end = width <= 850 && last ? center - last.offsetLeft - last.offsetWidth / 2 : 0;
+    const x = start + (end - start) * progress;
+
+    if (!reducedMotion) {
+      for (const card of cards) {
+        const position = (x + card.offsetLeft + card.offsetWidth / 2 - center) / center;
+        const edge = Math.min(1, Math.max(0, (Math.abs(position) - 0.35) / 0.65));
+        card.style.setProperty('--gallery-angle', `${Math.sign(position) * edge * 32}deg`);
+        card.style.setProperty('--gallery-scale', 1 - edge * 0.17);
+      }
+    }
     track.style.transform = `translate3d(${x}px, 0, 0)`;
     if (count && totalCards) {
       const active = Math.min(totalCards, Math.floor(progress * totalCards) + 1);
       count.textContent = `${String(active).padStart(2, '0')} — ${String(totalCards).padStart(2, '0')}`;
     }
-    const portrait = document.querySelector('.portrait-wash');
-    if (portrait && !reducedMotion) portrait.style.transform = `scale(1.02) translate3d(0, ${progress * 2.2}%, 0)`;
   }
 
   function requestGalleryUpdate() {
@@ -39,21 +53,33 @@
   requestGalleryUpdate();
 
   if (orbit && !reducedMotion) {
-    orbit.addEventListener('pointermove', (event) => {
+    const steerOrbit = (event) => {
+      if (!event.isPrimary) return;
       const bounds = orbit.getBoundingClientRect();
-      const nx = (event.clientX - bounds.left) / bounds.width - 0.5;
-      const ny = (event.clientY - bounds.top) / bounds.height - 0.5;
-      orbit.style.setProperty('--tilt-x', `${-ny * 7}deg`);
-      orbit.style.setProperty('--tilt-y', `${nx * 9}deg`);
-      chips.forEach((chip) => {
-        const depth = Number(chip.dataset.depth || 20);
-        chip.style.transform = `perspective(800px) rotateX(${-ny * 11}deg) rotateY(${nx * 13}deg) translate3d(${nx * depth * 0.36}px, ${ny * depth * 0.36}px, ${depth}px)`;
-      });
-    });
-    orbit.addEventListener('pointerleave', () => {
-      orbit.style.removeProperty('--tilt-x');
-      orbit.style.removeProperty('--tilt-y');
-      chips.forEach((chip) => chip.style.removeProperty('transform'));
+      const normalize = (position, size) => Math.max(-1, Math.min(1, position / size * 2 - 1));
+      const x = normalize(event.clientX - bounds.left, bounds.width);
+      const y = normalize(event.clientY - bounds.top, bounds.height);
+      orbit.dataset.tracking = '';
+      orbit.style.setProperty('--orbit-pitch', `${-y * 12}deg`);
+      orbit.style.setProperty('--orbit-yaw', `${x * 16}deg`);
+      orbit.style.setProperty('--orbit-light-x', `${50 + x * 42}%`);
+      orbit.style.setProperty('--orbit-light-y', `${42 + y * 38}%`);
+    };
+
+    const resetOrbit = () => {
+      delete orbit.dataset.tracking;
+      orbit.style.removeProperty('--orbit-pitch');
+      orbit.style.removeProperty('--orbit-yaw');
+      orbit.style.removeProperty('--orbit-light-x');
+      orbit.style.removeProperty('--orbit-light-y');
+    };
+
+    orbit.addEventListener('pointerdown', steerOrbit);
+    orbit.addEventListener('pointermove', steerOrbit);
+    orbit.addEventListener('pointerleave', resetOrbit);
+    orbit.addEventListener('pointercancel', resetOrbit);
+    orbit.addEventListener('pointerup', (event) => {
+      if (event.pointerType !== 'mouse') resetOrbit();
     });
   }
 })();
